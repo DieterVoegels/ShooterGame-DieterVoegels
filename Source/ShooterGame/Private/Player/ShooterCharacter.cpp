@@ -876,6 +876,8 @@ void AShooterCharacter::SetupPlayerInputComponent(class UInputComponent* PlayerI
 	PlayerInputComponent->BindAction("Run", IE_Pressed, this, &AShooterCharacter::OnStartRunning);
 	PlayerInputComponent->BindAction("RunToggle", IE_Pressed, this, &AShooterCharacter::OnStartRunningToggle);
 	PlayerInputComponent->BindAction("Run", IE_Released, this, &AShooterCharacter::OnStopRunning);
+
+	PlayerInputComponent->BindAction("Teleport", IE_Pressed, this, &AShooterCharacter::OnTeleport);
 }
 
 
@@ -1142,6 +1144,11 @@ void AShooterCharacter::OnStopJump()
 {
 	bPressedJump = false;
 	StopJumping();
+}
+
+void AShooterCharacter::OnTeleport()
+{
+	static_cast<UShooterCharacterMovement*>(GetMovementComponent())->Teleport();
 }
 
 //////////////////////////////////////////////////////////////////////////

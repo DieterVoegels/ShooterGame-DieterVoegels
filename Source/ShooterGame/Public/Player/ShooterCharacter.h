@@ -194,6 +194,8 @@ class AShooterCharacter : public ACharacter
 	/** player released run action */
 	void OnStopRunning();
 
+	void OnTeleport();
+
 	//////////////////////////////////////////////////////////////////////////
 	// Reading data
 
