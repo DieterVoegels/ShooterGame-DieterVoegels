@@ -811,6 +811,29 @@ void AShooterCharacter::UpdateRunSounds()
 	}
 }
 
+FHitResult AShooterCharacter::CheckWallProximity(FVector Direction)
+{
+	FHitResult HitOut(ForceInit);
+	FVector EndPoint = GetActorLocation() + (Direction * WallJumpRange);
+
+	FCollisionQueryParams TraceParams = FCollisionQueryParams(FName("WallTraceTag"), true, this);
+	TraceParams.bTraceComplex = true;
+	TraceParams.bReturnPhysicalMaterial = false;
+	TraceParams.bFindInitialOverlaps = true;
+
+	GetWorld()->SweepSingleByChannel(
+		HitOut,
+		GetActorLocation(),
+		EndPoint,
+		GetActorRotation().Quaternion(),
+		ECollisionChannel::ECC_Visibility,
+		FCollisionShape::MakeSphere(30.0f),
+		TraceParams
+	);
+
+	return HitOut;
+}
+
 //////////////////////////////////////////////////////////////////////////
 // Animations
 
@@ -1136,7 +1159,44 @@ void AShooterCharacter::OnStartJump()
 	AShooterPlayerController* MyPC = Cast<AShooterPlayerController>(Controller);
 	if (MyPC && MyPC->IsGameInputAllowed())
 	{
-		bPressedJump = true;
+		//If we are falling, then check for wall jump. Else, do a normal jump
+		if (GetMovementComponent()->IsFalling())
+		{
+			FHitResult WallHit;
+			FHitResult RightHit = CheckWallProximity(GetActorRightVector());
+			FHitResult LeftHit = CheckWallProximity(GetActorRightVector() * -1.0f);
+
+			//Determine which wall is closer
+			if (RightHit.bBlockingHit && !LeftHit.bBlockingHit)
+			{
+				WallHit = RightHit;
+			}
+			else if (!RightHit.bBlockingHit && LeftHit.bBlockingHit)
+			{
+				WallHit = LeftHit;
+			}
+			else if (RightHit.Distance < LeftHit.Distance)
+			{
+				WallHit = RightHit;
+			}
+			else
+			{
+				WallHit = LeftHit;
+			}
+
+			//Double check that we hit a wall, if so do the wall jump
+			if (WallHit.bBlockingHit)
+			{
+				FVector LaunchForceVector = WallHit.ImpactNormal + GetActorUpVector();
+				LaunchForceVector.Normalize();
+
+				LaunchCharacter(LaunchForceVector * WallJumpForce, false, false);
+			}
+		}
+		else
+		{
+			bPressedJump = true;
+		}
 	}
 }
 

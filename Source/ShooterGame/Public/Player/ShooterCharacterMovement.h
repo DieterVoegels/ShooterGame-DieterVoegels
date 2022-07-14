@@ -17,6 +17,7 @@ class UShooterCharacterMovement : public UCharacterMovementComponent
   UShooterCharacterMovement(const FObjectInitializer& ObjectInitializer);
 	virtual float GetMaxSpeed() const override;
 
+  //Saves the character movement into a list
   class FSavedMove_ShooterCharacter : public FSavedMove_Character
   {
   public:
@@ -47,15 +48,21 @@ public:
   virtual class FNetworkPredictionData_Client* GetPredictionData_Client() const override;
   void OnMovementUpdated(float DeltaTime, const FVector& OldLocation, const FVector& OldVelocity);
   
+  //Direction to teleport
   FVector TeleportDirection;
+
+  //Current teleport state 
   uint8 bWantsToTeleport : 1;
 
+  //The distance to teleport
   UPROPERTY(EditAnywhere, Category = "Teleport")
     float TeleportDistance;
 
+  //Update teleport direction
   UFUNCTION(Unreliable, Server, WithValidation)
     void Server_TeleportDirection(const FVector& TeleportDir);
 
+  //Teleports the player a set distance in the direction they are facing
   UFUNCTION(BlueprintCallable, Category = "Teleport")
     void Teleport();
 };

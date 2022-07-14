@@ -33,6 +33,7 @@ float UShooterCharacterMovement::GetMaxSpeed() const
 	return MaxSpeed;
 }
 
+
 void UShooterCharacterMovement::OnMovementUpdated(float DeltaTime, const FVector& OldLocation, const FVector& OldVelocity)
 {
 	Super::OnMovementUpdated(DeltaTime, OldLocation, OldVelocity);
@@ -42,15 +43,19 @@ void UShooterCharacterMovement::OnMovementUpdated(float DeltaTime, const FVector
 		return;
 	}
 
+	//Teleport
 	if (bWantsToTeleport)
 	{
 		bWantsToTeleport = false;
 
 		TeleportDirection.Normalize();
+
+		//Don't teleport into the air
 		TeleportDirection.Z = 0.0f;
 		FVector NewLocation = CharacterOwner->GetActorLocation() + TeleportDirection * TeleportDistance;
 
-		CharacterOwner->SetActorLocation(NewLocation, false, nullptr, ETeleportType::TeleportPhysics);
+		//Set player location
+		CharacterOwner->SetActorLocation(NewLocation, false, nullptr, ETeleportType::None);
 	}
 }
 
@@ -80,6 +85,7 @@ void UShooterCharacterMovement::FSavedMove_ShooterCharacter::Clear()
 {
 	Super::Clear();
 
+	//Teleport
 	bSavedWantsToTeleport = false;
 	SavedTeleportDirection = FVector::ZeroVector;
 }
@@ -88,6 +94,7 @@ uint8 UShooterCharacterMovement::FSavedMove_ShooterCharacter::GetCompressedFlags
 {
 	uint8 Flags = Super::GetCompressedFlags();
 
+	//Teleport
 	if (bSavedWantsToTeleport)
 	{
 		Flags |= FLAG_Custom_0;
@@ -108,6 +115,7 @@ void UShooterCharacterMovement::FSavedMove_ShooterCharacter::SetMoveFor(ACharact
 	UShooterCharacterMovement* CharacterMovement = Cast<UShooterCharacterMovement>(Character->GetCharacterMovement());
 	if (CharacterMovement)
 	{
+		//Teleport
 		bSavedWantsToTeleport = CharacterMovement->bWantsToTeleport;
 		SavedTeleportDirection = CharacterMovement->TeleportDirection;
 	}
@@ -120,6 +128,7 @@ void UShooterCharacterMovement::FSavedMove_ShooterCharacter::PrepMoveFor(class A
 	UShooterCharacterMovement* CharacterMovement = Cast<UShooterCharacterMovement>(Character->GetCharacterMovement());
 	if (CharacterMovement)
 	{
+		//Teleport
 		CharacterMovement->TeleportDirection = SavedTeleportDirection;
 	}
 }
@@ -149,7 +158,7 @@ void UShooterCharacterMovement::Teleport()
 {
 	if (PawnOwner->IsLocallyControlled())
 	{
-		TeleportDirection = PawnOwner->GetLastMovementInputVector();
+		TeleportDirection = CharacterOwner->GetActorForwardVector();
 		Server_TeleportDirection(TeleportDirection);
 	}
 

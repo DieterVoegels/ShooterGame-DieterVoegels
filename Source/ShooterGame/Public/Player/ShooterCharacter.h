@@ -113,6 +113,17 @@ class AShooterCharacter : public ACharacter
 	/** [server + local] change running state */
 	void SetRunning(bool bNewRunning, bool bToggle);
 
+	//Checks for a wall in a certain direction and distance away, returning the hit result
+	FHitResult CheckWallProximity(FVector Direction);
+
+	//How far away from a wall we can wall jump
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Wall Jump")
+		float WallJumpRange;
+
+	//How much force to launch for a wall jump
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Wall Jump")
+		float WallJumpForce;
+
 	//////////////////////////////////////////////////////////////////////////
 	// Animations
 
@@ -194,6 +205,7 @@ class AShooterCharacter : public ACharacter
 	/** player released run action */
 	void OnStopRunning();
 
+	/** player pressed teleport action*/
 	void OnTeleport();
 
 	//////////////////////////////////////////////////////////////////////////
