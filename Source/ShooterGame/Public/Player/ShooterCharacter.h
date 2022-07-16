@@ -13,6 +13,8 @@ class AShooterCharacter : public ACharacter
 {
 	GENERATED_UCLASS_BODY()
 
+  virtual void BeginPlay() override;
+
 	virtual void BeginDestroy() override;
 
 	/** spawn inventory, setup initial variables */
@@ -113,16 +115,11 @@ class AShooterCharacter : public ACharacter
 	/** [server + local] change running state */
 	void SetRunning(bool bNewRunning, bool bToggle);
 
-	//Checks for a wall in a certain direction and distance away, returning the hit result
-	FHitResult CheckWallProximity(FVector Direction);
 
-	//How far away from a wall we can wall jump
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Wall Jump")
-		float WallJumpRange;
+	UFUNCTION()
+	void OnCapsuleHit(UPrimitiveComponent* HitComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, FVector NormalImpulse, const FHitResult& Hit);
 
-	//How much force to launch for a wall jump
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Wall Jump")
-		float WallJumpForce;
+	bool bHoldingJump;
 
 	//////////////////////////////////////////////////////////////////////////
 	// Animations

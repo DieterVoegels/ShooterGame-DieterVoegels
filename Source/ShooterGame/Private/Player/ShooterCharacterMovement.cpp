@@ -11,6 +11,7 @@ UShooterCharacterMovement::UShooterCharacterMovement(const FObjectInitializer& O
 	: Super(ObjectInitializer)
 {
 	TeleportDistance = 1000.0f;
+	DefaultGravity = GravityScale;
 }
 
 float UShooterCharacterMovement::GetMaxSpeed() const
@@ -32,7 +33,6 @@ float UShooterCharacterMovement::GetMaxSpeed() const
 
 	return MaxSpeed;
 }
-
 
 void UShooterCharacterMovement::OnMovementUpdated(float DeltaTime, const FVector& OldLocation, const FVector& OldVelocity)
 {
@@ -57,13 +57,48 @@ void UShooterCharacterMovement::OnMovementUpdated(float DeltaTime, const FVector
 		//Set player location
 		CharacterOwner->SetActorLocation(NewLocation, false, nullptr, ETeleportType::None);
 	}
+
+	//Wall run
+	if (bWantsToWallRun)
+	{
+		
+		if (static_cast<AShooterCharacter*>(CharacterOwner)->bHoldingJump == false)
+		{
+			GravityScale = 1.0f;
+			bWantsToWallRun = false;
+
+			FVector JumpDirection = WallDirection * -1.0f + CharacterOwner->GetActorUpVector();
+			JumpDirection.Normalize();
+
+			Launch(JumpDirection * WallJumpForce);
+		}
+
+		FHitResult WallHit = CheckWallProximity(WallDirection);
+
+		if (WallHit.bBlockingHit && abs(FVector::DotProduct(WallDirection, WallHit.Normal)) > WallRunCornerVariance)
+		{
+			WallDirection = WallHit.Normal * -1.0f;
+			FVector VelocityDirection = FVector::VectorPlaneProject(Velocity, WallDirection);
+			VelocityDirection.Normalize();
+			Velocity = VelocityDirection * 1000.0f;
+		}
+		else
+		{
+			GravityScale = 1.0f;
+			bWantsToWallRun = false;
+		}
+	}
 }
 
 void UShooterCharacterMovement::UpdateFromCompressedFlags(uint8 Flags)
 {
 	Super::UpdateFromCompressedFlags(Flags);
 
+	//Teleport
 	bWantsToTeleport = (Flags & FSavedMove_Character::FLAG_Custom_0) != 0;
+
+	//Wall Run
+	bWantsToWallRun = (Flags & FSavedMove_Character::FLAG_Custom_1) != 0;
 }
 
 class FNetworkPredictionData_Client* UShooterCharacterMovement::GetPredictionData_Client() const
@@ -88,6 +123,11 @@ void UShooterCharacterMovement::FSavedMove_ShooterCharacter::Clear()
 	//Teleport
 	bSavedWantsToTeleport = false;
 	SavedTeleportDirection = FVector::ZeroVector;
+
+	//Wall Run
+	bSavedWantsToWallRun = false;
+	SavedWallDirection = FVector::ZeroVector;
+	SavedWallRunMovementDirection = FVector::ZeroVector;
 }
 
 uint8 UShooterCharacterMovement::FSavedMove_ShooterCharacter::GetCompressedFlags() const
@@ -98,6 +138,12 @@ uint8 UShooterCharacterMovement::FSavedMove_ShooterCharacter::GetCompressedFlags
 	if (bSavedWantsToTeleport)
 	{
 		Flags |= FLAG_Custom_0;
+	}
+
+	//Wall Run
+	if (bSavedWantsToWallRun)
+	{
+		Flags |= FLAG_Custom_1;
 	}
 
 	return Flags;
@@ -118,6 +164,11 @@ void UShooterCharacterMovement::FSavedMove_ShooterCharacter::SetMoveFor(ACharact
 		//Teleport
 		bSavedWantsToTeleport = CharacterMovement->bWantsToTeleport;
 		SavedTeleportDirection = CharacterMovement->TeleportDirection;
+		
+		//Wall Direction
+		bSavedWantsToWallRun = CharacterMovement->bWantsToWallRun;
+		SavedWallDirection = CharacterMovement->WallDirection;
+		SavedWallRunMovementDirection = CharacterMovement->WallRunMovementDirection;
 	}
 }
 
@@ -130,6 +181,10 @@ void UShooterCharacterMovement::FSavedMove_ShooterCharacter::PrepMoveFor(class A
 	{
 		//Teleport
 		CharacterMovement->TeleportDirection = SavedTeleportDirection;
+
+		//Wall Run
+		CharacterMovement->WallDirection = SavedWallDirection;
+		CharacterMovement->WallRunMovementDirection = SavedWallRunMovementDirection;
 	}
 }
 
@@ -163,4 +218,67 @@ void UShooterCharacterMovement::Teleport()
 	}
 
 	bWantsToTeleport = true;
+}
+
+
+
+FHitResult UShooterCharacterMovement::CheckWallProximity(FVector Direction)
+{
+	FHitResult HitOut(ForceInit);
+	FVector EndPoint = GetActorLocation() + (Direction * (CharacterOwner->GetCapsuleComponent()->GetUnscaledCapsuleRadius() + WallMaxDistance));
+
+	FCollisionQueryParams TraceParams = FCollisionQueryParams(FName("WallTraceTag"), true, PawnOwner);
+	TraceParams.bTraceComplex = true;
+	TraceParams.bReturnPhysicalMaterial = false;
+	TraceParams.bFindInitialOverlaps = true;
+
+	GetWorld()->LineTraceSingleByChannel(
+		HitOut,
+		GetActorLocation(),
+		EndPoint,
+		ECollisionChannel::ECC_Visibility,
+		TraceParams
+	);
+
+	return HitOut;
+}
+
+bool UShooterCharacterMovement::Server_WallDirection_Validate(const FVector& Direction)
+{
+	return true;
+}
+
+void UShooterCharacterMovement::Server_WallDirection_Implementation(const FVector& Direction)
+{
+	WallDirection = Direction;
+}
+
+bool UShooterCharacterMovement::Server_WallRunMovementDirection_Validate(const FVector& Direction)
+{
+	return true;
+}
+
+void UShooterCharacterMovement::Server_WallRunMovementDirection_Implementation(const FVector& Direction)
+{
+	WallRunMovementDirection = Direction;
+}
+
+void UShooterCharacterMovement::WallRun(const FVector& Direction)
+{
+	if (PawnOwner->IsLocallyControlled())
+	{
+		WallDirection = Direction;
+		WallDirection.Normalize();
+
+		WallRunMovementDirection = FVector::VectorPlaneProject(Velocity, WallDirection);
+		WallRunMovementDirection.Normalize();
+
+		GravityScale = WallRunGravity;
+		Velocity.Z = 0.0f;
+
+		Server_WallDirection(WallDirection);
+		Server_WallRunMovementDirection(WallRunMovementDirection);
+	}
+
+	bWantsToWallRun = true;
 }

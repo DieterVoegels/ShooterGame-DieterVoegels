@@ -105,6 +105,12 @@ void AShooterCharacter::PostInitializeComponents()
 	}
 }
 
+void AShooterCharacter::BeginPlay()
+{
+	Super::BeginPlay();
+	GetCapsuleComponent()->OnComponentHit.AddDynamic(this, &AShooterCharacter::OnCapsuleHit);
+}
+
 void AShooterCharacter::Destroyed()
 {
 	Super::Destroyed();
@@ -811,27 +817,20 @@ void AShooterCharacter::UpdateRunSounds()
 	}
 }
 
-FHitResult AShooterCharacter::CheckWallProximity(FVector Direction)
+void AShooterCharacter::OnCapsuleHit(UPrimitiveComponent* HitComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, FVector NormalImpulse, const FHitResult& Hit)
 {
-	FHitResult HitOut(ForceInit);
-	FVector EndPoint = GetActorLocation() + (Direction * WallJumpRange);
+	//If we are jumping, check for wall running
+	if (bHoldingJump)
+	{
+		//Calculate how vertical the normal vector is
+		float NormalDirection = FVector::DotProduct(FVector(0.0f, 0.0f, 1.0f), Hit.ImpactNormal);
 
-	FCollisionQueryParams TraceParams = FCollisionQueryParams(FName("WallTraceTag"), true, this);
-	TraceParams.bTraceComplex = true;
-	TraceParams.bReturnPhysicalMaterial = false;
-	TraceParams.bFindInitialOverlaps = true;
-
-	GetWorld()->SweepSingleByChannel(
-		HitOut,
-		GetActorLocation(),
-		EndPoint,
-		GetActorRotation().Quaternion(),
-		ECollisionChannel::ECC_Visibility,
-		FCollisionShape::MakeSphere(30.0f),
-		TraceParams
-	);
-
-	return HitOut;
+		//If collided with a horizontal surface, we are wall running
+		if (abs(NormalDirection) < 0.1f)
+		{
+			static_cast<UShooterCharacterMovement*>(GetMovementComponent())->WallRun(Hit.ImpactPoint - GetActorLocation());
+		}
+	}
 }
 
 //////////////////////////////////////////////////////////////////////////
@@ -1159,49 +1158,14 @@ void AShooterCharacter::OnStartJump()
 	AShooterPlayerController* MyPC = Cast<AShooterPlayerController>(Controller);
 	if (MyPC && MyPC->IsGameInputAllowed())
 	{
-		//If we are falling, then check for wall jump. Else, do a normal jump
-		if (GetMovementComponent()->IsFalling())
-		{
-			FHitResult WallHit;
-			FHitResult RightHit = CheckWallProximity(GetActorRightVector());
-			FHitResult LeftHit = CheckWallProximity(GetActorRightVector() * -1.0f);
-
-			//Determine which wall is closer
-			if (RightHit.bBlockingHit && !LeftHit.bBlockingHit)
-			{
-				WallHit = RightHit;
-			}
-			else if (!RightHit.bBlockingHit && LeftHit.bBlockingHit)
-			{
-				WallHit = LeftHit;
-			}
-			else if (RightHit.Distance < LeftHit.Distance)
-			{
-				WallHit = RightHit;
-			}
-			else
-			{
-				WallHit = LeftHit;
-			}
-
-			//Double check that we hit a wall, if so do the wall jump
-			if (WallHit.bBlockingHit)
-			{
-				FVector LaunchForceVector = WallHit.ImpactNormal + GetActorUpVector();
-				LaunchForceVector.Normalize();
-
-				LaunchCharacter(LaunchForceVector * WallJumpForce, false, false);
-			}
-		}
-		else
-		{
-			bPressedJump = true;
-		}
+		bHoldingJump = true;
+		bPressedJump = true;
 	}
 }
 
 void AShooterCharacter::OnStopJump()
 {
+	bHoldingJump = false;
 	bPressedJump = false;
 	StopJumping();
 }

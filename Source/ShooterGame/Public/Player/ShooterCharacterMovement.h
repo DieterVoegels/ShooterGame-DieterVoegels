@@ -17,7 +17,8 @@ class UShooterCharacterMovement : public UCharacterMovementComponent
   UShooterCharacterMovement(const FObjectInitializer& ObjectInitializer);
 	virtual float GetMaxSpeed() const override;
 
-  //Saves the character movement into a list
+  //////////////////////////////////////////////////////////////////////////
+  // Saves the character movement into a list
   class FSavedMove_ShooterCharacter : public FSavedMove_Character
   {
   public:
@@ -32,8 +33,14 @@ class UShooterCharacterMovement : public UCharacterMovementComponent
     //Teleport
     FVector SavedTeleportDirection;
     uint8 bSavedWantsToTeleport : 1;
+
+    FVector SavedWallDirection;
+    FVector SavedWallRunMovementDirection;
+    uint8 bSavedWantsToWallRun : 1;
   };
 
+  //////////////////////////////////////////////////////////////////////////
+  // Network Prediction
   class FNetworkPredictionData_Client_ShooterCharacter : public FNetworkPredictionData_Client_Character
   {
   public:
@@ -48,6 +55,9 @@ public:
   virtual class FNetworkPredictionData_Client* GetPredictionData_Client() const override;
   void OnMovementUpdated(float DeltaTime, const FVector& OldLocation, const FVector& OldVelocity);
   
+  //////////////////////////////////////////////////////////////////////////
+  // Teleport
+
   //Direction to teleport
   FVector TeleportDirection;
 
@@ -55,7 +65,7 @@ public:
   uint8 bWantsToTeleport : 1;
 
   //The distance to teleport
-  UPROPERTY(EditAnywhere, Category = "Teleport")
+  UPROPERTY(EditAnywhere, Category = "Movement|Teleport")
     float TeleportDistance;
 
   //Update teleport direction
@@ -63,6 +73,51 @@ public:
     void Server_TeleportDirection(const FVector& TeleportDir);
 
   //Teleports the player a set distance in the direction they are facing
-  UFUNCTION(BlueprintCallable, Category = "Teleport")
+  UFUNCTION(BlueprintCallable, Category = "Movement|Teleport")
     void Teleport();
+
+  //////////////////////////////////////////////////////////////////////////
+  // Wall Run
+
+  //Checks for a wall in a certain direction and distance away, returning the hit result
+  FHitResult CheckWallProximity(FVector Direction);
+
+  uint8 bWantsToWallRun;
+  FVector WallDirection;
+  FVector WallRunMovementDirection;
+
+  //Maximum distance from the wall to wall run
+  UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Wall Run")
+    float WallMaxDistance;
+
+  //Maximum difference between each wall normal, 0 to 1. The Lower the number, the tighter the corners you can wall run.
+  UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Wall Run")
+    float WallRunCornerVariance;
+
+  //How fast you wall run
+  UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Wall Run")
+    float WallRunSpeed;
+
+  //Gravity when wall running
+  UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Wall Run")
+    float WallRunGravity;
+
+  //Gravity when not wall running
+  float DefaultGravity;
+
+  //How much force to launch for a wall jump
+  UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Wall Run")
+    float WallJumpForce;
+
+  // Wall direction replication
+  UFUNCTION(Unreliable, Server, WithValidation)
+    void Server_WallDirection(const FVector& Direction);
+
+  // Movement direction replication
+  UFUNCTION(Unreliable, Server, WithValidation)
+    void Server_WallRunMovementDirection(const FVector& Direction);
+
+  // Initiates wall run
+  UFUNCTION(BlueprintCallable, Category = "Movement|Wall Run")
+  void WallRun(const FVector& Direction);
 };
