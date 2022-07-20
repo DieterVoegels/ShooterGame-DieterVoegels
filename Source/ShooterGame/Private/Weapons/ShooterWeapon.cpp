@@ -170,7 +170,17 @@ void AShooterWeapon::OnLeaveInventory()
 {
 	if (IsAttachedToPawn())
 	{
+		SetActorLocation(MyPawn->GetActorLocation());
+
+		FTimerDelegate Delegate;
+		Delegate.BindLambda([this] { Destroy(); });
+		GetWorldTimerManager().SetTimer(TimerHandle_DestroyOnLeaveInventory, Delegate, WeaponConfig.DestroyOnLeaveInventoryDuration, false);
+
 		OnUnEquip();
+	}
+	else
+	{
+		Destroy();
 	}
 
 	if (GetLocalRole() == ROLE_Authority)
@@ -210,10 +220,10 @@ void AShooterWeapon::AttachMeshToPawn()
 void AShooterWeapon::DetachMeshFromPawn()
 {
 	Mesh1P->DetachFromComponent(FDetachmentTransformRules::KeepRelativeTransform);
-	Mesh1P->SetHiddenInGame(true);
+	//Mesh1P->SetHiddenInGame(true);
 
 	Mesh3P->DetachFromComponent(FDetachmentTransformRules::KeepRelativeTransform);
-	Mesh3P->SetHiddenInGame(true);
+	//Mesh3P->SetHiddenInGame(true);
 }
 
 

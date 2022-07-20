@@ -58,6 +58,9 @@ struct FWeaponData
 	UPROPERTY(EditDefaultsOnly, Category=WeaponStat)
 	float NoAnimReloadDuration;
 
+	UPROPERTY(EditDefaultsOnly, Category=WeaponStat)
+	float DestroyOnLeaveInventoryDuration;
+
 	/** defaults */
 	FWeaponData()
 	{
@@ -68,6 +71,7 @@ struct FWeaponData
 		InitialClips = 4;
 		TimeBetweenShots = 0.2f;
 		NoAnimReloadDuration = 1.0f;
+		DestroyOnLeaveInventoryDuration = 10.0f;
 	}
 };
 
@@ -425,6 +429,9 @@ protected:
 
 	/** Handle for efficient management of HandleFiring timer */
 	FTimerHandle TimerHandle_HandleFiring;
+
+	/** Handle for efficient management of DestroyOnLeaveInventory timer */
+	FTimerHandle TimerHandle_DestroyOnLeaveInventory;
 
 	//////////////////////////////////////////////////////////////////////////
 	// Input - server side

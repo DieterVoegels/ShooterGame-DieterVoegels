@@ -603,7 +603,6 @@ void AShooterCharacter::DestroyInventory()
 		if (Weapon)
 		{
 			RemoveWeapon(Weapon);
-			Weapon->Destroy();
 		}
 	}
 }
@@ -622,6 +621,7 @@ void AShooterCharacter::RemoveWeapon(AShooterWeapon* Weapon)
 	if (Weapon && GetLocalRole() == ROLE_Authority)
 	{
 		Weapon->OnLeaveInventory();
+		Weapon->SetActorLocation(GetActorLocation());
 		Inventory.RemoveSingle(Weapon);
 	}
 }
