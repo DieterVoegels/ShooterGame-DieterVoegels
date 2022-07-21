@@ -537,6 +537,9 @@ protected:
 	/** find hit */
 	FHitResult WeaponTrace(const FVector& TraceFrom, const FVector& TraceTo) const;
 
+	/** spawn weapon pickup */
+	void SpawnPickup();
+
 protected:
 	/** Returns Mesh1P subobject **/
 	FORCEINLINE USkeletalMeshComponent* GetMesh1P() const { return Mesh1P; }

@@ -61,7 +61,7 @@ void UShooterCharacterMovement::OnMovementUpdated(float DeltaTime, const FVector
 	//Wall run
 	if (bWantsToWallRun)
 	{
-		
+		// If character lets go of Jump, then jump from the wall
 		if (static_cast<AShooterCharacter*>(CharacterOwner)->bHoldingJump == false)
 		{
 			GravityScale = 1.0f;
@@ -70,11 +70,12 @@ void UShooterCharacterMovement::OnMovementUpdated(float DeltaTime, const FVector
 			FVector JumpDirection = WallDirection * -1.0f + CharacterOwner->GetActorUpVector();
 			JumpDirection.Normalize();
 
-			Launch(JumpDirection * WallJumpForce);
+			Launch(JumpDirection * WallJumpForce + Velocity);
 		}
 
 		FHitResult WallHit = CheckWallProximity(WallDirection);
 
+		// Update velocity direction to be tangent to the wall, unless it is a corner
 		if (WallHit.bBlockingHit && abs(FVector::DotProduct(WallDirection, WallHit.Normal)) > WallRunCornerVariance)
 		{
 			WallDirection = WallHit.Normal * -1.0f;
@@ -220,18 +221,18 @@ void UShooterCharacterMovement::Teleport()
 	bWantsToTeleport = true;
 }
 
-
-
 FHitResult UShooterCharacterMovement::CheckWallProximity(FVector Direction)
 {
 	FHitResult HitOut(ForceInit);
 	FVector EndPoint = GetActorLocation() + (Direction * (CharacterOwner->GetCapsuleComponent()->GetUnscaledCapsuleRadius() + WallMaxDistance));
 
+	//Trace parameters
 	FCollisionQueryParams TraceParams = FCollisionQueryParams(FName("WallTraceTag"), true, PawnOwner);
 	TraceParams.bTraceComplex = true;
 	TraceParams.bReturnPhysicalMaterial = false;
 	TraceParams.bFindInitialOverlaps = true;
 
+	//Line trace
 	GetWorld()->LineTraceSingleByChannel(
 		HitOut,
 		GetActorLocation(),
@@ -265,6 +266,7 @@ void UShooterCharacterMovement::Server_WallRunMovementDirection_Implementation(c
 
 void UShooterCharacterMovement::WallRun(const FVector& Direction)
 {
+	//start wall run by initializing variables
 	if (PawnOwner->IsLocallyControlled())
 	{
 		WallDirection = Direction;

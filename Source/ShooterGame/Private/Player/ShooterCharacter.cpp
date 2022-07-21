@@ -108,6 +108,7 @@ void AShooterCharacter::PostInitializeComponents()
 void AShooterCharacter::BeginPlay()
 {
 	Super::BeginPlay();
+
 	GetCapsuleComponent()->OnComponentHit.AddDynamic(this, &AShooterCharacter::OnCapsuleHit);
 }
 
@@ -603,6 +604,7 @@ void AShooterCharacter::DestroyInventory()
 		if (Weapon)
 		{
 			RemoveWeapon(Weapon);
+			Weapon->Destroy();
 		}
 	}
 }
@@ -621,7 +623,6 @@ void AShooterCharacter::RemoveWeapon(AShooterWeapon* Weapon)
 	if (Weapon && GetLocalRole() == ROLE_Authority)
 	{
 		Weapon->OnLeaveInventory();
-		Weapon->SetActorLocation(GetActorLocation());
 		Inventory.RemoveSingle(Weapon);
 	}
 }
@@ -900,6 +901,8 @@ void AShooterCharacter::SetupPlayerInputComponent(class UInputComponent* PlayerI
 	PlayerInputComponent->BindAction("Run", IE_Released, this, &AShooterCharacter::OnStopRunning);
 
 	PlayerInputComponent->BindAction("Teleport", IE_Pressed, this, &AShooterCharacter::OnTeleport);
+
+	PlayerInputComponent->BindAction("DebugSuicide", IE_Pressed, this, &AShooterCharacter::Suicide);
 }
 
 

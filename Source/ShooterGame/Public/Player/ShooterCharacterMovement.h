@@ -109,15 +109,15 @@ public:
   UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Movement|Wall Run")
     float WallJumpForce;
 
-  // Wall direction replication
+  //Wall direction replication
   UFUNCTION(Unreliable, Server, WithValidation)
     void Server_WallDirection(const FVector& Direction);
 
-  // Movement direction replication
+  //Movement direction replication
   UFUNCTION(Unreliable, Server, WithValidation)
     void Server_WallRunMovementDirection(const FVector& Direction);
 
-  // Initiates wall run
+  //Initiates wall run
   UFUNCTION(BlueprintCallable, Category = "Movement|Wall Run")
   void WallRun(const FVector& Direction);
 };

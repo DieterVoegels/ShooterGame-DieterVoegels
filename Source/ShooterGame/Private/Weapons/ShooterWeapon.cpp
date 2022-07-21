@@ -1,6 +1,7 @@
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "ShooterGame.h"
+#include "Pickups/ShooterPickup_Weapon.h"
 #include "Weapons/ShooterWeapon.h"
 #include "Player/ShooterCharacter.h"
 #include "Particles/ParticleSystemComponent.h"
@@ -129,8 +130,6 @@ void AShooterWeapon::OnEquipFinished()
 			StartReload();
 		}
 	}
-
-	
 }
 
 void AShooterWeapon::OnUnEquip()
@@ -170,17 +169,12 @@ void AShooterWeapon::OnLeaveInventory()
 {
 	if (IsAttachedToPawn())
 	{
-		SetActorLocation(MyPawn->GetActorLocation());
-
-		FTimerDelegate Delegate;
-		Delegate.BindLambda([this] { Destroy(); });
-		GetWorldTimerManager().SetTimer(TimerHandle_DestroyOnLeaveInventory, Delegate, WeaponConfig.DestroyOnLeaveInventoryDuration, false);
+		if (GetLocalRole() == ROLE_Authority)
+		{
+			SpawnPickup();
+		}
 
 		OnUnEquip();
-	}
-	else
-	{
-		Destroy();
 	}
 
 	if (GetLocalRole() == ROLE_Authority)
@@ -220,10 +214,10 @@ void AShooterWeapon::AttachMeshToPawn()
 void AShooterWeapon::DetachMeshFromPawn()
 {
 	Mesh1P->DetachFromComponent(FDetachmentTransformRules::KeepRelativeTransform);
-	//Mesh1P->SetHiddenInGame(true);
+	Mesh1P->SetHiddenInGame(true);
 
 	Mesh3P->DetachFromComponent(FDetachmentTransformRules::KeepRelativeTransform);
-	//Mesh3P->SetHiddenInGame(true);
+	Mesh3P->SetHiddenInGame(true);
 }
 
 
@@ -767,6 +761,24 @@ FHitResult AShooterWeapon::WeaponTrace(const FVector& StartTrace, const FVector&
 	GetWorld()->LineTraceSingleByChannel(Hit, StartTrace, EndTrace, COLLISION_WEAPON, TraceParams);
 
 	return Hit;
+}
+
+void AShooterWeapon::SpawnPickup()
+{
+	AShooterPickup_Weapon* WeaponPickup;
+	if (MyPawn)
+	{
+		// Spawn weapon pickup
+		WeaponPickup = GetWorld()->SpawnActor<AShooterPickup_Weapon>(AShooterPickup_Weapon::StaticClass(), MyPawn->GetActorTransform());
+
+		// Set pickup values
+		if (WeaponPickup)
+		{
+			WeaponPickup->SetMesh(Mesh1P);
+			WeaponPickup->AmmoQty = CurrentAmmo;
+			WeaponPickup->WeaponType = this->GetClass();
+		}
+	}
 }
 
 void AShooterWeapon::SetOwningPawn(AShooterCharacter* NewOwner)
