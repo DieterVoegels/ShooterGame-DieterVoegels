@@ -13,8 +13,6 @@ class AShooterCharacter : public ACharacter
 {
 	GENERATED_UCLASS_BODY()
 
-  virtual void BeginPlay() override;
-
 	virtual void BeginDestroy() override;
 
 	/** spawn inventory, setup initial variables */
@@ -114,12 +112,6 @@ class AShooterCharacter : public ACharacter
 
 	/** [server + local] change running state */
 	void SetRunning(bool bNewRunning, bool bToggle);
-
-
-	UFUNCTION()
-	void OnCapsuleHit(UPrimitiveComponent* HitComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, FVector NormalImpulse, const FHitResult& Hit);
-
-	bool bHoldingJump;
 
 	//////////////////////////////////////////////////////////////////////////
 	// Animations

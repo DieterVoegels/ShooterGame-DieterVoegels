@@ -105,13 +105,6 @@ void AShooterCharacter::PostInitializeComponents()
 	}
 }
 
-void AShooterCharacter::BeginPlay()
-{
-	Super::BeginPlay();
-
-	GetCapsuleComponent()->OnComponentHit.AddDynamic(this, &AShooterCharacter::OnCapsuleHit);
-}
-
 void AShooterCharacter::Destroyed()
 {
 	Super::Destroyed();
@@ -818,22 +811,6 @@ void AShooterCharacter::UpdateRunSounds()
 	}
 }
 
-void AShooterCharacter::OnCapsuleHit(UPrimitiveComponent* HitComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, FVector NormalImpulse, const FHitResult& Hit)
-{
-	//If we are jumping, check for wall running
-	if (bHoldingJump)
-	{
-		//Calculate how vertical the normal vector is
-		float NormalDirection = FVector::DotProduct(FVector(0.0f, 0.0f, 1.0f), Hit.ImpactNormal);
-
-		//If collided with a horizontal surface, we are wall running
-		if (abs(NormalDirection) < 0.1f)
-		{
-			static_cast<UShooterCharacterMovement*>(GetMovementComponent())->WallRun(Hit.ImpactPoint - GetActorLocation());
-		}
-	}
-}
-
 //////////////////////////////////////////////////////////////////////////
 // Animations
 
@@ -1161,14 +1138,12 @@ void AShooterCharacter::OnStartJump()
 	AShooterPlayerController* MyPC = Cast<AShooterPlayerController>(Controller);
 	if (MyPC && MyPC->IsGameInputAllowed())
 	{
-		bHoldingJump = true;
 		bPressedJump = true;
 	}
 }
 
 void AShooterCharacter::OnStopJump()
 {
-	bHoldingJump = false;
 	bPressedJump = false;
 	StopJumping();
 }

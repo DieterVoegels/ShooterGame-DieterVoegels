@@ -5,13 +5,280 @@
 #include "Player/ShooterCharacterMovement.h"
 
 //----------------------------------------------------------------------//
-// UPawnMovementComponent
+// Saved Move
 //----------------------------------------------------------------------//
+
+void UShooterCharacterMovement::FSavedMove_ShooterCharacter::Clear()
+{
+	Super::Clear();
+
+	// Teleport
+	bSavedWantsToTeleport = false;
+	SavedTeleportDirection = FVector::ZeroVector;
+
+	// Wall Run
+	SavedWallDirection = FVector::ZeroVector;
+	SavedWallRunMovementDirection = FVector::ZeroVector;
+}
+
+uint8 UShooterCharacterMovement::FSavedMove_ShooterCharacter::GetCompressedFlags() const
+{
+	uint8 Flags = Super::GetCompressedFlags();
+
+	// Teleport
+	if (bSavedWantsToTeleport)
+	{
+		Flags |= FLAG_Custom_0;
+	}
+
+	return Flags;
+}
+
+bool UShooterCharacterMovement::FSavedMove_ShooterCharacter::CanCombineWith(const FSavedMovePtr& NewMove, ACharacter* Character, float MaxDelta) const
+{
+	return Super::CanCombineWith(NewMove, Character, MaxDelta);
+}
+
+void UShooterCharacterMovement::FSavedMove_ShooterCharacter::SetMoveFor(ACharacter* Character, float InDeltaTime, FVector const& NewAccel, class FNetworkPredictionData_Client_Character& ClientData)
+{
+	Super::SetMoveFor(Character, InDeltaTime, NewAccel, ClientData);
+
+	UShooterCharacterMovement* CharacterMovement = Cast<UShooterCharacterMovement>(Character->GetCharacterMovement());
+	if (CharacterMovement)
+	{
+		// Teleport
+		bSavedWantsToTeleport = CharacterMovement->bWantsToTeleport;
+		SavedTeleportDirection = CharacterMovement->TeleportDirection;
+		
+		// Wall Direction
+		SavedWallDirection = CharacterMovement->WallDirection;
+		SavedWallRunMovementDirection = CharacterMovement->WallRunMovementDirection;
+	}
+}
+
+void UShooterCharacterMovement::FSavedMove_ShooterCharacter::PrepMoveFor(class ACharacter* Character)
+{
+	Super::PrepMoveFor(Character);
+
+	UShooterCharacterMovement* CharacterMovement = Cast<UShooterCharacterMovement>(Character->GetCharacterMovement());
+	if (CharacterMovement)
+	{
+		// Teleport
+		CharacterMovement->TeleportDirection = SavedTeleportDirection;
+
+		// Wall Run
+		CharacterMovement->WallDirection = SavedWallDirection;
+		CharacterMovement->WallRunMovementDirection = SavedWallRunMovementDirection;
+	}
+}
+
+//----------------------------------------------------------------------//
+// Network Prediction Data Client Character
+//----------------------------------------------------------------------//
+
+UShooterCharacterMovement::FNetworkPredictionData_Client_ShooterCharacter::FNetworkPredictionData_Client_ShooterCharacter(const UCharacterMovementComponent& ClientMovement)
+	: Super(ClientMovement)
+{
+	
+}
+
+FSavedMovePtr UShooterCharacterMovement::FNetworkPredictionData_Client_ShooterCharacter::AllocateNewMove()
+{
+	return FSavedMovePtr(new FSavedMove_ShooterCharacter);
+}
+
+//----------------------------------------------------------------------//
+// Character Movement
+//----------------------------------------------------------------------//
+
 UShooterCharacterMovement::UShooterCharacterMovement(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
 {
-	TeleportDistance = 1000.0f;
 	DefaultGravity = GravityScale;
+}
+
+void UShooterCharacterMovement::BeginPlay()
+{
+	Super::BeginPlay();
+
+	if (PawnOwner)
+	{
+		PawnOwner->OnActorHit.AddDynamic(this, &UShooterCharacterMovement::OnActorHit);
+	}
+}
+
+void UShooterCharacterMovement::OnActorHit(AActor* SelfActor, AActor* OtherActor, FVector NormalImpulse, const FHitResult& Hit)
+{
+	// If we are jumping, check for wall running
+	if (bHoldingJump)
+	{
+		if (MovementMode == MOVE_Custom && CustomMovementMode == SHOOTERMOVE_WallRunning)
+		{
+			return;
+		}
+
+		// Calculate how vertical the normal vector is
+		float NormalDirection = FVector::DotProduct(FVector(0.0f, 0.0f, 1.0f), Hit.ImpactNormal);
+
+		// If collided with a horizontal surface, we are wall running
+		if (abs(NormalDirection) < 0.1f)
+		{
+			StartWallRun(Hit.ImpactPoint - GetActorLocation());
+		}
+	}
+}
+
+
+
+//////////////////////////////////////////////////////////////////////////
+// Client Prediction
+
+void UShooterCharacterMovement::UpdateFromCompressedFlags(uint8 Flags)
+{
+	Super::UpdateFromCompressedFlags(Flags);
+
+	// Teleport
+	bWantsToTeleport = (Flags & FSavedMove_Character::FLAG_Custom_0) != 0;
+}
+
+class FNetworkPredictionData_Client* UShooterCharacterMovement::GetPredictionData_Client() const
+{
+	check(PawnOwner != NULL);
+	check(PawnOwner->GetLocalRole() < ROLE_Authority);
+
+	if (!ClientPredictionData)
+	{
+		UShooterCharacterMovement* MutableThis = const_cast<UShooterCharacterMovement*>(this);
+
+		MutableThis->ClientPredictionData = new FNetworkPredictionData_Client_ShooterCharacter(*this);
+	}
+
+	return ClientPredictionData;
+}
+
+//////////////////////////////////////////////////////////////////////////
+// Movement Updates
+
+void UShooterCharacterMovement::TickComponent(float DeltaTime, enum ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
+{
+	if (PawnOwner && PawnOwner->IsLocallyControlled())
+	{
+		bHoldingJump = IsHoldingJump();
+		Server_HoldingJump(bHoldingJump);
+	}
+
+	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
+}
+
+void UShooterCharacterMovement::OnMovementUpdated(float DeltaTime, const FVector& OldLocation, const FVector& OldVelocity)
+{
+	Super::OnMovementUpdated(DeltaTime, OldLocation, OldVelocity);
+
+	if (!CharacterOwner)
+	{
+		return;
+	}
+
+	// Teleport
+	if (bWantsToTeleport)
+	{
+		bWantsToTeleport = false;
+
+		TeleportDirection.Z = 0.0f;
+		FVector NewLocation = CharacterOwner->GetActorLocation() + (TeleportDirection * TeleportDistance);
+
+		PawnOwner->SetActorLocation(NewLocation, true);
+	}
+}
+
+void UShooterCharacterMovement::OnMovementModeChanged(EMovementMode PreviousMovementMode, uint8 PreviousCustomMode)
+{
+	// changed to wall running
+	if (MovementMode == MOVE_Custom)
+	{
+		if (CustomMovementMode == ECustomMovementMode::SHOOTERMOVE_WallRunning)
+		{
+			GravityScale = WallRunGravity;
+			Velocity.Z = 0.0f;
+		}
+	}
+
+	// changed from wall running
+	if (PreviousMovementMode == MOVE_Custom)
+	{
+		if (PreviousCustomMode == ECustomMovementMode::SHOOTERMOVE_WallRunning)
+		{
+			GravityScale = DefaultGravity;
+		}
+	}
+}
+
+void UShooterCharacterMovement::PhysCustom(float deltaTime, int32 Iterations)
+{
+	if (PawnOwner && PawnOwner->GetLocalRole() == ROLE_SimulatedProxy)
+	{
+		return;
+	}
+
+	if (!CharacterOwner)
+	{
+		return;
+	}
+
+	// Wall run
+	if (MovementMode == MOVE_Custom && CustomMovementMode == ECustomMovementMode::SHOOTERMOVE_WallRunning)
+	{
+		// If character lets go of the jump key, then jump off of the wall
+		if (!bHoldingJump)
+		{
+			FVector JumpDirection = WallDirection * -1.0f + CharacterOwner->GetActorUpVector();
+			JumpDirection.Normalize();
+
+			Launch(JumpDirection * WallJumpForce + Velocity);
+
+			StopWallRun();
+		}
+
+		// Update velocity direction to be tangent to the wall
+		// If the wall bends to much, such as a corner, then stop wall run
+		FHitResult WallHit = CheckWallProximity(WallDirection);
+
+		if (WallHit.bBlockingHit && abs(FVector::DotProduct(WallDirection, WallHit.Normal)) > WallRunCornerVariance)
+		{
+			WallDirection = WallHit.Normal * -1.0f;
+			FVector VelocityDirection = FVector::VectorPlaneProject(Velocity, WallDirection);
+			Velocity = VelocityDirection.GetSafeNormal() * 1000.0f;
+
+			const FVector AdjustedVelocity = Velocity * deltaTime;
+			FHitResult Hit(1.0f);
+			SafeMoveUpdatedComponent(AdjustedVelocity, UpdatedComponent->GetComponentQuat(), false, Hit);
+		}
+		else
+		{
+			StopWallRun();
+		}
+	}
+
+	Super::PhysCustom(deltaTime, Iterations);
+}
+
+bool UShooterCharacterMovement::IsHoldingJump()
+{
+	if (PawnOwner && PawnOwner->IsLocallyControlled())
+	{
+		TArray<FInputActionKeyMapping> JumpKeyMappings;
+		UInputSettings::GetInputSettings()->GetActionMappingByName("Jump", JumpKeyMappings);
+		for (FInputActionKeyMapping& JumpKeyMapping : JumpKeyMappings)
+		{
+			AShooterPlayerController* controller = PawnOwner->GetController<AShooterPlayerController>();
+			if (controller && controller->IsInputKeyDown(JumpKeyMapping.Key))
+			{
+				return true;
+			}
+		}
+	}
+
+	return false;
 }
 
 float UShooterCharacterMovement::GetMaxSpeed() const
@@ -34,170 +301,18 @@ float UShooterCharacterMovement::GetMaxSpeed() const
 	return MaxSpeed;
 }
 
-void UShooterCharacterMovement::OnMovementUpdated(float DeltaTime, const FVector& OldLocation, const FVector& OldVelocity)
-{
-	Super::OnMovementUpdated(DeltaTime, OldLocation, OldVelocity);
+//////////////////////////////////////////////////////////////////////////
+// Teleport
 
-	if (!CharacterOwner)
+void UShooterCharacterMovement::Teleport()
+{
+	if (PawnOwner && PawnOwner->IsLocallyControlled())
 	{
-		return;
+		TeleportDirection = CharacterOwner->GetActorForwardVector().GetSafeNormal();
+		Server_TeleportDirection(TeleportDirection);
 	}
 
-	//Teleport
-	if (bWantsToTeleport)
-	{
-		bWantsToTeleport = false;
-
-		TeleportDirection.Normalize();
-
-		//Don't teleport into the air
-		TeleportDirection.Z = 0.0f;
-		FVector NewLocation = CharacterOwner->GetActorLocation() + TeleportDirection * TeleportDistance;
-
-		//Set player location
-		CharacterOwner->SetActorLocation(NewLocation, false, nullptr, ETeleportType::None);
-	}
-
-	//Wall run
-	if (bWantsToWallRun)
-	{
-		// If character lets go of Jump, then jump from the wall
-		if (static_cast<AShooterCharacter*>(CharacterOwner)->bHoldingJump == false)
-		{
-			GravityScale = 1.0f;
-			bWantsToWallRun = false;
-
-			FVector JumpDirection = WallDirection * -1.0f + CharacterOwner->GetActorUpVector();
-			JumpDirection.Normalize();
-
-			Launch(JumpDirection * WallJumpForce + Velocity);
-		}
-
-		FHitResult WallHit = CheckWallProximity(WallDirection);
-
-		// Update velocity direction to be tangent to the wall, unless it is a corner
-		if (WallHit.bBlockingHit && abs(FVector::DotProduct(WallDirection, WallHit.Normal)) > WallRunCornerVariance)
-		{
-			WallDirection = WallHit.Normal * -1.0f;
-			FVector VelocityDirection = FVector::VectorPlaneProject(Velocity, WallDirection);
-			VelocityDirection.Normalize();
-			Velocity = VelocityDirection * 1000.0f;
-		}
-		else
-		{
-			GravityScale = 1.0f;
-			bWantsToWallRun = false;
-		}
-	}
-}
-
-void UShooterCharacterMovement::UpdateFromCompressedFlags(uint8 Flags)
-{
-	Super::UpdateFromCompressedFlags(Flags);
-
-	//Teleport
-	bWantsToTeleport = (Flags & FSavedMove_Character::FLAG_Custom_0) != 0;
-
-	//Wall Run
-	bWantsToWallRun = (Flags & FSavedMove_Character::FLAG_Custom_1) != 0;
-}
-
-class FNetworkPredictionData_Client* UShooterCharacterMovement::GetPredictionData_Client() const
-{
-	check(PawnOwner != NULL);
-	check(PawnOwner->GetLocalRole() < ROLE_Authority);
-
-	if (!ClientPredictionData)
-	{
-		UShooterCharacterMovement* MutableThis = const_cast<UShooterCharacterMovement*>(this);
-
-		MutableThis->ClientPredictionData = new FNetworkPredictionData_Client_ShooterCharacter(*this);
-	}
-
-	return ClientPredictionData;
-}
-
-void UShooterCharacterMovement::FSavedMove_ShooterCharacter::Clear()
-{
-	Super::Clear();
-
-	//Teleport
-	bSavedWantsToTeleport = false;
-	SavedTeleportDirection = FVector::ZeroVector;
-
-	//Wall Run
-	bSavedWantsToWallRun = false;
-	SavedWallDirection = FVector::ZeroVector;
-	SavedWallRunMovementDirection = FVector::ZeroVector;
-}
-
-uint8 UShooterCharacterMovement::FSavedMove_ShooterCharacter::GetCompressedFlags() const
-{
-	uint8 Flags = Super::GetCompressedFlags();
-
-	//Teleport
-	if (bSavedWantsToTeleport)
-	{
-		Flags |= FLAG_Custom_0;
-	}
-
-	//Wall Run
-	if (bSavedWantsToWallRun)
-	{
-		Flags |= FLAG_Custom_1;
-	}
-
-	return Flags;
-}
-
-bool UShooterCharacterMovement::FSavedMove_ShooterCharacter::CanCombineWith(const FSavedMovePtr& NewMove, ACharacter* Character, float MaxDelta) const
-{
-	return Super::CanCombineWith(NewMove, Character, MaxDelta);
-}
-
-void UShooterCharacterMovement::FSavedMove_ShooterCharacter::SetMoveFor(ACharacter* Character, float InDeltaTime, FVector const& NewAccel, class FNetworkPredictionData_Client_Character& ClientData)
-{
-	Super::SetMoveFor(Character, InDeltaTime, NewAccel, ClientData);
-
-	UShooterCharacterMovement* CharacterMovement = Cast<UShooterCharacterMovement>(Character->GetCharacterMovement());
-	if (CharacterMovement)
-	{
-		//Teleport
-		bSavedWantsToTeleport = CharacterMovement->bWantsToTeleport;
-		SavedTeleportDirection = CharacterMovement->TeleportDirection;
-		
-		//Wall Direction
-		bSavedWantsToWallRun = CharacterMovement->bWantsToWallRun;
-		SavedWallDirection = CharacterMovement->WallDirection;
-		SavedWallRunMovementDirection = CharacterMovement->WallRunMovementDirection;
-	}
-}
-
-void UShooterCharacterMovement::FSavedMove_ShooterCharacter::PrepMoveFor(class ACharacter* Character)
-{
-	Super::PrepMoveFor(Character);
-
-	UShooterCharacterMovement* CharacterMovement = Cast<UShooterCharacterMovement>(Character->GetCharacterMovement());
-	if (CharacterMovement)
-	{
-		//Teleport
-		CharacterMovement->TeleportDirection = SavedTeleportDirection;
-
-		//Wall Run
-		CharacterMovement->WallDirection = SavedWallDirection;
-		CharacterMovement->WallRunMovementDirection = SavedWallRunMovementDirection;
-	}
-}
-
-UShooterCharacterMovement::FNetworkPredictionData_Client_ShooterCharacter::FNetworkPredictionData_Client_ShooterCharacter(const UCharacterMovementComponent& ClientMovement)
-	: Super(ClientMovement)
-{
-	
-}
-
-FSavedMovePtr UShooterCharacterMovement::FNetworkPredictionData_Client_ShooterCharacter::AllocateNewMove()
-{
-	return FSavedMovePtr(new FSavedMove_ShooterCharacter);
+	bWantsToTeleport = true;
 }
 
 bool UShooterCharacterMovement::Server_TeleportDirection_Validate(const FVector& TeleportDir)
@@ -210,29 +325,46 @@ void UShooterCharacterMovement::Server_TeleportDirection_Implementation(const FV
 	TeleportDirection = TeleportDir;
 }
 
-void UShooterCharacterMovement::Teleport()
+//////////////////////////////////////////////////////////////////////////
+// Wall Run
+
+void UShooterCharacterMovement::StartWallRun(const FVector& Direction)
 {
-	if (PawnOwner->IsLocallyControlled())
+	if (PawnOwner && PawnOwner->IsLocallyControlled())
 	{
-		TeleportDirection = CharacterOwner->GetActorForwardVector();
-		Server_TeleportDirection(TeleportDirection);
+		WallDirection = Direction.GetSafeNormal();
+		WallRunMovementDirection = FVector::VectorPlaneProject(Velocity, WallDirection).GetSafeNormal();
+
+		Server_WallDirection(WallDirection);
+		Server_WallRunMovementDirection(WallRunMovementDirection);
 	}
 
-	bWantsToTeleport = true;
+	SetMovementMode(EMovementMode::MOVE_Custom, ECustomMovementMode::SHOOTERMOVE_WallRunning);
+}
+
+void UShooterCharacterMovement::StopWallRun()
+{
+	SetMovementMode(EMovementMode::MOVE_Falling);
 }
 
 FHitResult UShooterCharacterMovement::CheckWallProximity(FVector Direction)
 {
 	FHitResult HitOut(ForceInit);
+
+	if (!CharacterOwner)
+	{
+		return HitOut;
+	}
+
 	FVector EndPoint = GetActorLocation() + (Direction * (CharacterOwner->GetCapsuleComponent()->GetUnscaledCapsuleRadius() + WallMaxDistance));
 
-	//Trace parameters
+	// Trace parameters
 	FCollisionQueryParams TraceParams = FCollisionQueryParams(FName("WallTraceTag"), true, PawnOwner);
 	TraceParams.bTraceComplex = true;
 	TraceParams.bReturnPhysicalMaterial = false;
 	TraceParams.bFindInitialOverlaps = true;
 
-	//Line trace
+	// Line trace
 	GetWorld()->LineTraceSingleByChannel(
 		HitOut,
 		GetActorLocation(),
@@ -264,23 +396,12 @@ void UShooterCharacterMovement::Server_WallRunMovementDirection_Implementation(c
 	WallRunMovementDirection = Direction;
 }
 
-void UShooterCharacterMovement::WallRun(const FVector& Direction)
+bool UShooterCharacterMovement::Server_HoldingJump_Validate(bool IsHoldingJump)
 {
-	//start wall run by initializing variables
-	if (PawnOwner->IsLocallyControlled())
-	{
-		WallDirection = Direction;
-		WallDirection.Normalize();
+	return true;
+}
 
-		WallRunMovementDirection = FVector::VectorPlaneProject(Velocity, WallDirection);
-		WallRunMovementDirection.Normalize();
-
-		GravityScale = WallRunGravity;
-		Velocity.Z = 0.0f;
-
-		Server_WallDirection(WallDirection);
-		Server_WallRunMovementDirection(WallRunMovementDirection);
-	}
-
-	bWantsToWallRun = true;
+void UShooterCharacterMovement::Server_HoldingJump_Implementation(bool IsHoldingJump)
+{
+	bHoldingJump = IsHoldingJump;
 }

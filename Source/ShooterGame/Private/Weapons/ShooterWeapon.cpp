@@ -169,11 +169,7 @@ void AShooterWeapon::OnLeaveInventory()
 {
 	if (IsAttachedToPawn())
 	{
-		if (GetLocalRole() == ROLE_Authority)
-		{
-			SpawnPickup();
-		}
-
+		SpawnPickup();
 		OnUnEquip();
 	}
 
